@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UPSA LOST and FOUND ID | Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="login-page">
+<main class="login-wrap">
+  <section class="login-intro">
+    <p class="brand-mark">UPSA</p>
+    <h1>LOST and FOUND ID</h1>
+    <p class="lead">Found a student ID, Ghana Card, NHIS card or driver’s licence? Post it so its owner can get it back. Lost yours? Report it here and see if someone has found it.</p>
+  </section>
+
+  <section class="login-tag" aria-labelledby="signin-title">
+    <div class="tag-hole" aria-hidden="true"></div>
+    <h2 id="signin-title">Sign in</h2>
+    <form id="loginForm" novalidate>
+      <label for="indexNo">Index number</label>
+      <input id="indexNo" name="indexNo" inputmode="numeric" autocomplete="username" maxlength="8" placeholder="103XXXXX" aria-describedby="indexHelp indexError" required>
+      <p id="indexHelp" class="hint">8 digits, starting with 103.</p>
+      <p id="indexError" class="error" role="alert" hidden></p>
+      <button type="submit" class="btn primary wide">Sign in</button>
+    </form>
+  </section>
+</main>
+<script src="js/login.js"></script>
+</body>
+</html>

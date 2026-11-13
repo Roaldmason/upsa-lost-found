@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UPSA LOST and FOUND ID | Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="logo" href="dashboard.html"><span class="brand-mark">UPSA</span> LOST and FOUND ID</a>
+  <div class="who"><span id="whoAmI"></span><button class="btn ghost" id="logoutBtn" type="button">Sign out</button></div>
+</header>
+
+<main class="page">
+  <section class="panel" id="browse" aria-labelledby="brTitle">
+    <h2 id="brTitle">Find an ID</h2>
+    <p class="sub" id="count" role="status"></p>
+    <div class="toolbar">
+      <div class="field grow">
+        <label for="search">Search by name, ID type or place</label>
+        <input id="search" type="search" placeholder="e.g. Amina, Ghana Card, library">
+      </div>
+      <div class="field">
+        <label for="filter">Show</label>
+        <select id="filter">
+          <option value="open">All open posts</option>
+          <option value="found">IDs that were found</option>
+          <option value="lost">IDs reported missing</option>
+          <option value="mine">My posts</option>
+          <option value="done">Resolved</option>
+          <option value="all">Everything</option>
+        </select>
+      </div>
+    </div>
+    <div id="grid" class="grid"></div>
+  </section>
+
+  <section class="panel" id="post" aria-labelledby="upTitle">
+    <h2 id="upTitle">Post an ID</h2>
+    <div class="seg" role="group" aria-label="What are you posting?">
+      <button type="button" id="kindFound" aria-pressed="true">I found an ID</button>
+      <button type="button" id="kindLost" class="lost" aria-pressed="false">I lost my ID</button>
+    </div>
+    <form id="itemForm" class="form-grid" novalidate>
+      <div class="field">
+        <label for="idType">Type of ID</label>
+        <select id="idType" required>
+          <option value="">Choose one</option>
+          <option>Student ID</option>
+          <option>Ghana Card</option>
+          <option>NHIS card</option>
+          <option>Driver's licence</option>
+          <option>Passport</option>
+          <option>Voter ID</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="holderName" id="lblName">Name on the ID</label>
+        <input id="holderName" maxlength="80" placeholder="Full name as printed" required>
+      </div>
+      <div class="field">
+        <label for="place" id="lblPlace">Where did you find it?</label>
+        <select id="place" required>
+          <option value="">Choose a place</option>
+          <option>Hostel</option>
+          <option>Classroom</option>
+          <option>Lecture hall</option>
+          <option>Library</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="placeDetail">Exact spot (room, block or hall)</label>
+        <input id="placeDetail" maxlength="60" placeholder="e.g. Block B, room 12 corridor">
+      </div>
+      <div class="field full">
+        <label for="photo" id="lblPhoto">Photo of the ID (optional)</label>
+        <input id="photo" type="file" accept="image/*">
+        <p class="warn" style="margin:.6rem 0 0">Cover the ID number before taking the photo. The name and the photo of the face are enough for the owner to recognise it.</p>
+        <img id="preview" class="preview" alt="Preview of the selected photo" hidden>
+      </div>
+      <div class="field full">
+        <label for="whatsapp">Your WhatsApp number</label>
+        <input id="whatsapp" type="tel" inputmode="tel" maxlength="14" autocomplete="tel" placeholder="0241234567" required>
+        <p class="hint">Students will message you here. Everyone using the portal can see this number.</p>
+      </div>
+      <p id="formError" class="error full" role="alert" hidden></p>
+      <div class="full"><button class="btn primary" id="submitBtn" type="submit">Post found ID</button></div>
+    </form>
+  </section>
+</main>
+<script src="js/dashboard.js"></script>
+</body>
+</html>
