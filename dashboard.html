@@ -11,7 +11,7 @@
 <body>
 <header class="topbar">
   <a class="logo" href="dashboard.html"><span class="brand-mark">UPSA</span> LOST and FOUND ID</a>
-  <div class="who"><span id="whoAmI"></span><button class="btn ghost" id="logoutBtn" type="button">Sign out</button></div>
+  <div class="who"><a class="btn small" href="#post">Post an ID</a><span id="whoAmI"></span><button class="btn ghost" id="logoutBtn" type="button">Sign out</button></div>
 </header>
 
 <main class="page">
@@ -76,6 +76,10 @@
       <div class="field">
         <label for="placeDetail">Exact spot (room, block or hall)</label>
         <input id="placeDetail" maxlength="60" placeholder="e.g. Block B, room 12 corridor">
+      </div>
+      <div class="field full">
+        <label for="note" id="lblNote">Note</label>
+        <textarea id="note" rows="3" maxlength="300" required></textarea>
       </div>
       <div class="field full">
         <label for="photo" id="lblPhoto">Photo of the ID (optional)</label>
