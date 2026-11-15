@@ -84,7 +84,7 @@
       <div class="field full">
         <label for="photo" id="lblPhoto">Photo of the ID (optional)</label>
         <input id="photo" type="file" accept="image/*">
-        <p class="warn" style="margin:.6rem 0 0">Cover the ID number before taking the photo. The name and the photo of the face are enough for the owner to recognise it.</p>
+        <p class="warn photo-warn">Cover the ID number before taking the photo. The name and the photo of the face are enough for the owner to recognise it.</p>
         <img id="preview" class="preview" alt="Preview of the selected photo" hidden>
       </div>
       <div class="field full">
@@ -97,6 +97,17 @@
     </form>
   </section>
 </main>
+<dialog id="matchDialog" class="match" aria-labelledby="matchTitle">
+  <p class="chip" id="matchCount"></p>
+  <h2 id="matchTitle"></h2>
+  <p id="matchText"></p>
+  <div id="matchCard" class="match-card"></div>
+  <div class="match-actions">
+    <a id="matchWa" class="btn primary" target="_blank" rel="noopener"></a>
+    <button id="matchSeen" class="btn" type="button">Got it</button>
+    <button id="matchLater" class="btn ghost" type="button">Remind me later</button>
+  </div>
+</dialog>
 <script src="js/dashboard.js"></script>
 </body>
 </html>

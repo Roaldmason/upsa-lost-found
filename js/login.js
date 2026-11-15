@@ -5,14 +5,13 @@
   var input = document.getElementById('indexNo');
   var error = document.getElementById('indexError');
 
-  if (sessionStorage.getItem('upsa_user')) { window.location.replace('dashboard.html'); return; }
+
 
   function showError(msg) { error.textContent = msg; error.hidden = false; input.setAttribute('aria-invalid', 'true'); }
 
   input.addEventListener('input', function () {
     input.value = input.value.replace(/\D/g, '');
     error.hidden = true;
-    input.removeAttribute('aria-invalid');
   });
 
   form.addEventListener('submit', function (e) {
