@@ -55,6 +55,7 @@ git push
    - `DATABASE_URL` = your Neon connection string
    - `JWT_SECRET` = the long random string
    - `NODE_ENV` = `production`
+   - `SMS_PROVIDER` = `arkesel`, plus `ARKESEL_API_KEY` and `ARKESEL_SENDER_ID` (see `docs/SMS-SETUP.md`)
 5. Click **Create Web Service**. When the deploy finishes, Render gives you a URL like `https://upsa-lost-found.onrender.com`. Open it. That is your live site.
 
 Every `git push` to the main branch redeploys automatically.

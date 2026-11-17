@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="login-page">
+<!-- INCLUSIVE DESIGN 1: skip link. Keyboard and screen-reader users can jump straight to the sign-in form. -->
+<a class="skip-link" href="#signin-title">Skip to sign in</a>
 <main class="login-wrap">
   <section class="login-intro">
     <p class="brand-mark">UPSA</p>
@@ -18,21 +20,50 @@
 
   <section class="login-tag" aria-labelledby="signin-title">
     <div class="tag-hole" aria-hidden="true"></div>
-    <h2 id="signin-title">Sign in</h2>
-    <form id="loginForm" novalidate>
-      <label for="guestPhone">Guest</label>
-      <input id="guestPhone" name="guestPhone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="10" placeholder="0XXXXXXXXX" aria-describedby="guestHelp loginError">
-      <p id="guestHelp" class="hint">Your 10-digit phone number, starting with 0.</p>
+    <h2 id="signin-title" tabindex="-1">Sign in</h2>
 
-      <p class="or" aria-hidden="true"><span>or</span></p>
-
-      <label for="indexNo">Index number</label>
-      <input id="indexNo" name="indexNo" inputmode="numeric" autocomplete="username" maxlength="8" placeholder="103XXXXX" aria-describedby="indexHelp loginError">
+    <!-- STUDENT LOGIN (now on top) -->
+    <form id="studentForm" novalidate>
+      <label for="indexNo">Student: index number</label>
+      <input id="indexNo" name="indexNo" inputmode="numeric" autocomplete="username" maxlength="8" placeholder="103XXXXX" aria-describedby="indexHelp studentError">
       <p id="indexHelp" class="hint">8 digits, starting with 103.</p>
-
-      <p id="loginError" class="error" role="alert" hidden></p>
-      <button type="submit" class="btn primary wide" id="loginBtn">Sign in</button>
+      <p id="studentError" class="error" role="alert" hidden></p>
+      <button type="submit" class="btn primary wide" id="studentBtn">Sign in as student</button>
     </form>
+
+    <p class="or" aria-hidden="true"><span>or</span></p>
+
+    <!-- GUEST LOGIN (now below), with phone number verification -->
+    <section id="guestSection" aria-labelledby="guestTitle">
+      <h3 id="guestTitle" class="sub-title">Guest: verify your phone number</h3>
+
+      <!-- Step 1: enter the phone number and ask for a code -->
+      <form id="phoneForm" novalidate>
+        <label for="guestPhone">Phone number</label>
+        <input id="guestPhone" name="guestPhone" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="0XXXXXXXXX" aria-describedby="guestHelp phoneError">
+        <p id="guestHelp" class="hint">Your 10-digit phone number, starting with 0. We will text you a 6-digit code.</p>
+        <p id="phoneError" class="error" role="alert" hidden></p>
+        <button type="submit" class="btn primary wide" id="sendBtn">Send me a code</button>
+      </form>
+
+      <!-- Step 2: enter the code (shown after the text is sent) -->
+      <form id="codeForm" novalidate hidden>
+        <p id="codeIntro" class="hint step-intro"></p>
+        <label for="guestCode">6-digit code</label>
+        <!-- INCLUSIVE DESIGN 2: one-time-code autofill. The phone offers the code from the SMS with one tap, so nobody has to remember or retype it. -->
+        <input id="guestCode" name="guestCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="------" aria-describedby="codeHelp codeError">
+        <p id="codeHelp" class="hint">The code arrives by text message within a minute.</p>
+        <p id="codeError" class="error" role="alert" hidden></p>
+        <button type="submit" class="btn primary wide" id="verifyBtn">Verify and sign in</button>
+        <div class="code-links">
+          <button type="button" class="linklike" id="resendBtn" disabled>Send a new code</button>
+          <button type="button" class="linklike" id="changeBtn">Use a different number</button>
+        </div>
+      </form>
+
+      <!-- INCLUSIVE DESIGN 3: polite live region. Screen readers announce progress ("Code sent...") without any visual change being needed. -->
+      <p id="liveStatus" class="sr-only" role="status" aria-live="polite"></p>
+    </section>
   </section>
 </main>
 <script src="js/login.js"></script>

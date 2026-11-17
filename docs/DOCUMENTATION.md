@@ -6,10 +6,10 @@ A small website where UPSA students post **IDs they have found** (student ID, Gh
 ## Files
 | File | Role |
 |---|---|
-| `public/index.html` | Login page: **Guest** (phone number) above **Index number** |
+| `public/index.html` | Login page: **Index number** (student) above **Guest** (phone number + SMS code) |
 | `public/dashboard.html` | Home: search and browse posts, "Post an ID" form, match prompt |
 | `public/css/style.css` | All styling, light and dark mode, responsive |
-| `public/js/login.js` | Validation for both login types, calls `POST /api/login` |
+| `public/js/login.js` | Student login, and the guest two-step phone check (send code, enter code) |
 | `public/js/dashboard.js` | Talks to the API: posting, browsing, resolve, remove, live refresh, match prompt |
 | `server/app.js` | Express API and security settings |
 | `server/db.js` | PostgreSQL connection and table creation |
@@ -23,9 +23,9 @@ Run it with `npm start` (see `README.md`).
 
 ## Features
 1. **Login:** two ways in, one dashboard.
-   - **Guest:** a 10-digit phone number starting with `0` (`^0\d{9}$`).
-   - **Index number:** 8 digits starting with `103` (`^103\d{5}$`), otherwise "Invalid ID".
-   Fill in one box only. The server checks the format again and returns a signed token (7 days).
+   - **Index number (top):** 8 digits starting with `103` (`^103\d{5}$`), otherwise "Invalid ID".
+   - **Guest (below):** a 10-digit phone number starting with `0` (`^0\d{9}$`). The guest must **verify the number**: the server texts a 6-digit code (valid 5 minutes, one use, 5 wrong tries, 60 s between texts) and signs the guest in only after the right code is entered. See `docs/SMS-SETUP.md`.
+   The server checks every format again and returns a signed token (7 days).
 2. **Browse (home):** cards for found IDs (yellow) and missing-ID reports (red outline). Search by name, ID type or place. Filters: all open, found, missing, my posts, resolved, everything.
 3. **Post an ID:** switch between *I found an ID* and *I lost my ID*. Fields: ID type, name on the ID, place and exact spot, a note or description, optional photo, and WhatsApp number (required).
 4. **Contact:** each open post has a WhatsApp button that opens a chat with the poster and a ready-made message.
@@ -36,6 +36,7 @@ Run it with `npm start` (see `README.md`).
 
 ## Data model
 Tables in PostgreSQL:
+- `phone_codes(phone, code_hash, expires_at, sent_at, attempts)`: pending guest codes (only a hash is stored)
 - `users(id, role, created_at)`: id is the index number or guest phone number; role is `student` or `guest`
 - `items(id, kind, id_type, holder, place, detail, note, photo, whatsapp, owner_id, created_at, resolved)`
 - `matches(id, lost_item_id, found_item_id, created_at, lost_seen, found_seen)`
@@ -43,7 +44,9 @@ Tables in PostgreSQL:
 ## API
 | Route | Purpose |
 |---|---|
-| `POST /api/login` | `{role: "student" or "guest", id}` returns a token |
+| `POST /api/login` | `{role: "student", id}` returns a token (guests are refused here) |
+| `POST /api/guest/send-code` | `{phone}` texts a 6-digit code |
+| `POST /api/guest/verify` | `{phone, code}` returns a token for a verified guest |
 | `GET /api/items` | All posts (needs sign-in) |
 | `POST /api/items` | Create a post and look for matches |
 | `PATCH /api/items/:id` | Owner marks resolved or reopens |

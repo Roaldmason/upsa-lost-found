@@ -7,6 +7,14 @@ const SCHEMA = [
      role TEXT NOT NULL,
      created_at BIGINT NOT NULL
    )`,
+  /* one row per phone number waiting to be verified; only a hash of the code is kept */
+  `CREATE TABLE IF NOT EXISTS phone_codes (
+     phone TEXT PRIMARY KEY,
+     code_hash TEXT NOT NULL,
+     expires_at BIGINT NOT NULL,
+     sent_at BIGINT NOT NULL,
+     attempts INTEGER NOT NULL DEFAULT 0
+   )`,
   `CREATE TABLE IF NOT EXISTS items (
      id TEXT PRIMARY KEY,
      kind TEXT NOT NULL,

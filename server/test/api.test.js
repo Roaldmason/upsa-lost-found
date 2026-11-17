@@ -7,11 +7,13 @@ const { createApp } = require('../app');
 const { namesMatch } = require('../matching');
 
 let server, base, pool;
+const sent = []; // every text message the app tried to send
+const lastCode = () => /\b(\d{6})\b/.exec(sent[sent.length - 1].text)[1];
 test.before(async () => {
   const mem = newDb();
   pool = new (mem.adapters.createPg().Pool)();
   await init(pool);
-  server = createApp(pool, { jwtSecret: 'test-secret' }).listen(0);
+  server = createApp(pool, { jwtSecret: 'test-secret', resendMs: 0, sms: { name: 'test', send: async (phone, text) => { sent.push({ phone, text }); } } }).listen(0);
   base = 'http://127.0.0.1:' + server.address().port;
 });
 test.after(() => server.close());
@@ -24,7 +26,12 @@ async function call(method, url, body, token) {
   let j = null; try { j = await r.json(); } catch (e) {}
   return { status: r.status, body: j };
 }
-const login = async (role, id) => (await call('POST', '/api/login', { role, id })).body.token;
+/* students sign in with the index number; guests must verify their phone with a code */
+const login = async (role, id) => {
+  if (role === 'student') return (await call('POST', '/api/login', { role, id })).body.token;
+  await call('POST', '/api/guest/send-code', { phone: id });
+  return (await call('POST', '/api/guest/verify', { phone: id, code: lastCode() })).body.token;
+};
 const post = (token, o) => call('POST', '/api/items', Object.assign({ kind: 'found', idType: 'Ghana Card', holder: 'Amina Mensah', place: 'Library', note: 'blue card', whatsapp: '0241234567' }, o), token);
 
 test('name matching', () => {
@@ -36,9 +43,8 @@ test('name matching', () => {
 });
 
 test('login validation for students and guests', async () => {
-  assert.strictEqual((await call('POST', '/api/login', { role: 'guest', id: '0241234567' })).status, 200);
-  assert.strictEqual((await call('POST', '/api/login', { role: 'guest', id: '1241234567' })).status, 400);
-  assert.strictEqual((await call('POST', '/api/login', { role: 'guest', id: '024123456' })).status, 400);
+  // a guest can no longer skip the phone check
+  assert.strictEqual((await call('POST', '/api/login', { role: 'guest', id: '0241234567' })).status, 400);
   assert.strictEqual((await call('POST', '/api/login', { role: 'student', id: '10312345' })).status, 200);
   assert.strictEqual((await call('POST', '/api/login', { role: 'student', id: '20312345' })).status, 400);
   assert.strictEqual((await call('POST', '/api/login', { role: 'admin', id: '10312345' })).status, 400);
@@ -112,4 +118,66 @@ test('validation and photo route', async () => {
   const r = await fetch(base + '/api/items/' + id + '/photo');
   assert.strictEqual(r.status, 200); assert.strictEqual(r.headers.get('content-type'), 'image/jpeg');
   assert.strictEqual((await fetch(base + '/api/items/nope/photo')).status, 404);
+});
+
+test('guest phone verification', async () => {
+  const phone = '0277000001';
+  // bad numbers never send a text
+  const before = sent.length;
+  assert.strictEqual((await call('POST', '/api/guest/send-code', { phone: '1241234567' })).status, 400);
+  assert.strictEqual((await call('POST', '/api/guest/send-code', { phone: '024123456' })).status, 400);
+  assert.strictEqual(sent.length, before);
+  // the text goes to the international number and holds a 6-digit code
+  assert.strictEqual((await call('POST', '/api/guest/send-code', { phone })).status, 200);
+  assert.strictEqual(sent[sent.length - 1].phone, '233277000001');
+  const code = lastCode();
+  assert.match(code, /^\d{6}$/);
+  // wrong code, then right code
+  const wrong = code === '000000' ? '111111' : '000000';
+  const w = await call('POST', '/api/guest/verify', { phone, code: wrong });
+  assert.strictEqual(w.status, 400); assert.match(w.body.error, /not right/);
+  const ok = await call('POST', '/api/guest/verify', { phone, code });
+  assert.strictEqual(ok.status, 200); assert.strictEqual(ok.body.user.role, 'guest'); assert.strictEqual(ok.body.user.id, phone);
+  // the token really works, and the code cannot be used twice
+  assert.strictEqual((await call('GET', '/api/items', null, ok.body.token)).status, 200);
+  assert.strictEqual((await call('POST', '/api/guest/verify', { phone, code })).status, 400);
+});
+
+test('too many wrong guesses burn the code', async () => {
+  const phone = '0277000002';
+  await call('POST', '/api/guest/send-code', { phone });
+  const code = lastCode(), wrong = code === '000000' ? '111111' : '000000';
+  for (let i = 0; i < 5; i++) await call('POST', '/api/guest/verify', { phone, code: wrong });
+  const r = await call('POST', '/api/guest/verify', { phone, code }); // even the right code is refused now
+  assert.strictEqual(r.status, 429);
+});
+
+test('a new code replaces the old one', async () => {
+  const phone = '0277000003';
+  await call('POST', '/api/guest/send-code', { phone }); const first = lastCode();
+  await call('POST', '/api/guest/send-code', { phone }); const second = lastCode();
+  if (first !== second) assert.strictEqual((await call('POST', '/api/guest/verify', { phone, code: first })).status, 400);
+  assert.strictEqual((await call('POST', '/api/guest/verify', { phone, code: second })).status, 200);
+});
+
+test('SMS failure reports an error and keeps no code', async () => {
+  const mem = newDb(), p2 = new (mem.adapters.createPg().Pool)();
+  await init(p2);
+  const s2 = createApp(p2, { jwtSecret: 's', sms: { name: 'bad', send: async () => { throw new Error('provider down'); } } }).listen(0);
+  const r = await fetch('http://127.0.0.1:' + s2.address().port + '/api/guest/send-code', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '0277000004' }) });
+  assert.strictEqual(r.status, 502);
+  assert.strictEqual((await p2.query('SELECT * FROM phone_codes')).rows.length, 0);
+  s2.close();
+});
+
+test('send-code respects the wait between texts', async () => {
+  const mem = newDb(), p2 = new (mem.adapters.createPg().Pool)();
+  await init(p2);
+  const s2 = createApp(p2, { jwtSecret: 's', sms: { name: 't', send: async () => {} } }).listen(0); // default 60 s wait
+  const go = () => fetch('http://127.0.0.1:' + s2.address().port + '/api/guest/send-code', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '0277000005' }) });
+  assert.strictEqual((await go()).status, 200);
+  assert.strictEqual((await go()).status, 429);
+  s2.close();
 });

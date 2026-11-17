@@ -72,14 +72,81 @@ function createApp(pool, opts) {
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-  app.post('/api/login', loginLimiter, wrap(async (req, res) => {
-    var role = req.body && req.body.role, id = String((req.body && req.body.id) || '').trim();
-    if (role === 'student') { if (!STUDENT_RE.test(id)) return bad(res, 'Invalid ID. Index numbers are 8 digits starting with 103.'); }
-    else if (role === 'guest') { if (!GUEST_RE.test(id)) return bad(res, 'Phone number must be 10 digits and start with 0.'); }
-    else return bad(res, 'Choose Guest or Index number.');
-    await pool.query('INSERT INTO users (id, role, created_at) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING', [id, role, Date.now()]);
+  function signIn(res, id, role) {
     var token = jwt.sign({ sub: id, role: role }, secret, { expiresIn: '7d' });
     res.json({ token: token, user: { id: id, role: role } });
+  }
+
+  /* students sign in with their index number */
+  app.post('/api/login', loginLimiter, wrap(async (req, res) => {
+    var role = req.body && req.body.role, id = String((req.body && req.body.id) || '').trim();
+    if (role === 'guest') return bad(res, 'Guests must verify their phone number with a code first.');
+    if (role !== 'student') return bad(res, 'Enter your index number.');
+    if (!STUDENT_RE.test(id)) return bad(res, 'Invalid ID. Index numbers are 8 digits starting with 103.');
+    await pool.query('INSERT INTO users (id, role, created_at) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING', [id, role, Date.now()]);
+    signIn(res, id, role);
+  }));
+
+  /* ---------- guest phone verification (SMS code) ---------- */
+  const sms = opts.sms || { name: 'console', send: async (p, t) => console.log('[SMS to +' + p + '] ' + t) };
+  const CODE_TTL_MS = 5 * 60 * 1000;   // a code works for 5 minutes
+  const RESEND_MS = opts.resendMs !== undefined ? opts.resendMs : 60 * 1000; // wait 60 s before asking for another
+  const MAX_TRIES = 5;                 // wrong guesses allowed per code
+  const hashCode = (phone, code) => crypto.createHmac('sha256', secret).update(phone + ':' + code).digest('hex');
+  const sameHash = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+
+  const codeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, limit: opts.codeLimit || 10, standardHeaders: true, legacyHeaders: false,
+    message: { error: 'Too many code requests. Please try again in a few minutes.' }
+  });
+
+  app.post('/api/guest/send-code', codeLimiter, wrap(async (req, res) => {
+    var raw = String((req.body && req.body.phone) || '').trim();
+    if (!GUEST_RE.test(raw)) return bad(res, 'Phone number must be 10 digits and start with 0.');
+    var phone = cleanPhone(raw), now = Date.now();
+    var old = (await pool.query('SELECT sent_at FROM phone_codes WHERE phone = $1', [phone])).rows[0];
+    if (old && now - Number(old.sent_at) < RESEND_MS) {
+      var wait = Math.ceil((RESEND_MS - (now - Number(old.sent_at))) / 1000);
+      return res.status(429).json({ error: 'A code was just sent. You can ask for a new one in ' + wait + ' seconds.', retryIn: wait });
+    }
+    var code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    await pool.query(
+      `INSERT INTO phone_codes (phone, code_hash, expires_at, sent_at, attempts) VALUES ($1, $2, $3, $4, 0)
+       ON CONFLICT (phone) DO UPDATE SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, sent_at = EXCLUDED.sent_at, attempts = 0`,
+      [phone, hashCode(phone, code), now + CODE_TTL_MS, now]);
+    try {
+      await sms.send(phone, 'UPSA Lost & Found: your code is ' + code + '. It expires in 5 minutes. Do not share it.');
+    } catch (e) {
+      console.error('SMS failed:', e.message);
+      await pool.query('DELETE FROM phone_codes WHERE phone = $1', [phone]);
+      return bad(res, 'We could not send the text message. Check the number and try again.', 502);
+    }
+    res.json({ ok: true, expiresIn: CODE_TTL_MS / 1000, resendIn: RESEND_MS / 1000 });
+  }));
+
+  app.post('/api/guest/verify', loginLimiter, wrap(async (req, res) => {
+    var raw = String((req.body && req.body.phone) || '').trim(), code = String((req.body && req.body.code) || '').trim();
+    if (!GUEST_RE.test(raw)) return bad(res, 'Phone number must be 10 digits and start with 0.');
+    if (!/^\d{6}$/.test(code)) return bad(res, 'The code is 6 digits.');
+    var phone = cleanPhone(raw);
+    var row = (await pool.query('SELECT code_hash, expires_at, attempts FROM phone_codes WHERE phone = $1', [phone])).rows[0];
+    if (!row) return bad(res, 'No code was sent to this number. Ask for a new code.');
+    if (Number(row.expires_at) < Date.now()) {
+      await pool.query('DELETE FROM phone_codes WHERE phone = $1', [phone]);
+      return bad(res, 'That code has expired. Ask for a new one.');
+    }
+    if (row.attempts >= MAX_TRIES) {
+      await pool.query('DELETE FROM phone_codes WHERE phone = $1', [phone]);
+      return bad(res, 'Too many wrong tries. Ask for a new code.', 429);
+    }
+    if (!sameHash(row.code_hash, hashCode(phone, code))) {
+      await pool.query('UPDATE phone_codes SET attempts = attempts + 1 WHERE phone = $1', [phone]);
+      var left = MAX_TRIES - row.attempts - 1;
+      return bad(res, 'That code is not right. ' + (left > 0 ? left + (left === 1 ? ' try' : ' tries') + ' left.' : 'Ask for a new code.'));
+    }
+    await pool.query('DELETE FROM phone_codes WHERE phone = $1', [phone]); // a code works once
+    await pool.query('INSERT INTO users (id, role, created_at) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING', [raw, 'guest', Date.now()]);
+    signIn(res, raw, 'guest');
   }));
 
   /* ---------- items ---------- */
