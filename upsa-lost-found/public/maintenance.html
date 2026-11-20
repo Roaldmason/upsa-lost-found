@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UPSA LOST and FOUND ID | Under maintenance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="login-page">
+<a class="skip-link" href="#maintTitle">Skip to message</a>
+<main class="maint-wrap">
+  <p class="brand-mark">UPSA</p>
+  <h1 id="maintTitle" tabindex="-1">Website under maintenance</h1>
+  <p class="lead">We are making some improvements. LOST and FOUND ID will be back soon. Please check again in a little while.</p>
+  <p id="maintStatus" class="hint" role="status">This page checks automatically and will take you back in as soon as the website is on again.</p>
+
+  <details class="admin-door">
+    <summary>Administrator sign in</summary>
+    <form id="adminForm" novalidate>
+      <label for="adminId">Administrator ID</label>
+      <input id="adminId" inputmode="numeric" autocomplete="username" maxlength="8" aria-describedby="adminError">
+      <div id="adminPassWrap" hidden>
+        <label for="adminPass">Administrator password</label>
+        <input id="adminPass" type="password" autocomplete="current-password">
+      </div>
+      <p id="adminError" class="error" role="alert" hidden></p>
+      <button class="btn primary wide" id="adminBtn" type="submit">Sign in</button>
+    </form>
+  </details>
+</main>
+<script src="js/a11y.js"></script>
+<script src="js/maintenance.js"></script>
+</body>
+</html>

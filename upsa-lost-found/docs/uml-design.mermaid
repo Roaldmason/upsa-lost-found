@@ -1,0 +1,61 @@
+classDiagram
+  class Student {
+    +String indexNumber
+    +login(indexNumber)
+    +logout()
+  }
+  class IDPost {
+    +String id
+    +String kind  "found or lost"
+    +String idType
+    +String holder
+    +String place
+    +String detail
+    +String note
+    +String photo
+    +String whatsapp
+    +String owner
+    +Number created
+    +Boolean resolved
+  }
+  class AuthService {
+    +validate(indexNumber) Boolean
+    +createSession(indexNumber)
+    +endSession()
+  }
+  class PostService {
+    +load() IDPost[]
+    +add(post)
+    +toggleResolved(id)
+    +remove(id)
+    +search(text, filter) IDPost[]
+  }
+  class Storage {
+    <<browser>>
+    sessionStorage upsa_user
+    localStorage upsa_ids
+  }
+  Student "1" --> "0..*" IDPost : posts
+  Student ..> AuthService : signs in with
+  Student ..> PostService : uses
+  AuthService --> Storage
+  PostService --> Storage
+
+---
+sequenceDiagram
+  actor S as Student
+  participant L as Login page
+  participant D as Dashboard
+  participant DB as localStorage
+  S->>L: Enter index number
+  L->>L: Check 8 digits starting 103
+  L->>D: Save session, open dashboard
+  D->>DB: Read posts
+  D-->>S: Show found and missing IDs
+  S->>D: Search by name or ID type
+  S->>D: Post "I found an ID" or "I lost my ID"
+  D->>DB: Save post
+  S->>D: Tap WhatsApp button on a post
+  D-->>S: Open chat with the poster
+  S->>D: Mark resolved or Remove (own posts only)
+  D->>DB: Update or delete post
