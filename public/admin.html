@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UPSA LOST and FOUND ID | Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<a class="skip-link" href="#maintPanel">Skip to admin tools</a>
+<header class="topbar">
+  <a class="logo" href="admin.html"><span class="brand-mark">UPSA</span> Admin dashboard</a>
+  <div class="who"><span id="whoAmI"></span><button class="btn ghost" id="logoutBtn" type="button">Sign out</button></div>
+</header>
+
+<main class="page">
+  <section class="panel" id="maintPanel" aria-labelledby="mtTitle">
+    <h2 id="mtTitle">Website switch</h2>
+    <p class="sub">Turn the website off to show everyone else the maintenance page. You can still use this dashboard. Turn it on again and users get the website back.</p>
+    <div class="switch-row">
+      <p class="state" id="siteState" role="status">Checking...</p>
+      <button class="btn primary" id="siteBtn" type="button" disabled>Loading...</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="usTitle">
+    <h2 id="usTitle">People who have posted</h2>
+    <p class="sub" id="userCount" role="status"></p>
+    <div class="table-wrap">
+      <table class="admin-table">
+        <thead><tr><th scope="col">Who</th><th scope="col">Posts</th><th scope="col">Last post</th><th scope="col">Actions</th></tr></thead>
+        <tbody id="userRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="itTitle">
+    <h2 id="itTitle">All posts</h2>
+    <div class="toolbar">
+      <div class="field grow">
+        <label for="itemSearch">Search by name, ID type, place or who posted</label>
+        <input id="itemSearch" type="search" placeholder="e.g. 10312345, Ghana Card, library">
+      </div>
+    </div>
+    <p class="sub" id="itemCount" role="status"></p>
+    <ul class="admin-list" id="itemRows"></ul>
+  </section>
+
+  <section class="panel" aria-labelledby="rmTitle">
+    <h2 id="rmTitle">Removed accounts</h2>
+    <p class="sub">These people cannot sign in. Use “Allow back” to let one return.</p>
+    <ul class="admin-list" id="removedRows"></ul>
+  </section>
+</main>
+<script src="js/a11y.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>

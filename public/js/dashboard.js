@@ -4,6 +4,7 @@
   var user = sessionStorage.getItem('upsa_user');
   var role = sessionStorage.getItem('upsa_role');
   var valid = role === 'student' ? /^103\d{5}$/.test(user || '') : role === 'guest' ? /^0\d{9}$/.test(user || '') : false;
+  if (role === 'admin' && token) { window.location.replace('admin.html'); return; }
   if (!token || !valid) { signOut(true); return; }
 
   var $ = function (id) { return document.getElementById(id); };
@@ -25,6 +26,7 @@
       headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined
     }).then(function (r) {
+      if (r.status === 503) { window.location.replace('maintenance.html'); throw new Error('The website is under maintenance.'); }
       if (r.status === 401) { signOut(true); throw new Error('Please sign in again.'); }
       return r.json().catch(function () { return {}; }).then(function (j) {
         if (!r.ok) throw new Error(j.error || 'Something went wrong.');
@@ -157,6 +159,7 @@
         '<p class="note">' + esc(it.note) + '</p>' +
         '<p class="meta">Posted ' + ago(it.created) + ' by ' + (mine ? 'you' : esc(it.postedBy)) + '</p>' +
         (it.resolved ? '<p class="stamp">' + (lost ? 'Owner has recovered it' : 'Returned to owner') + '</p>' : wa) +
+        (CAN_SPEAK ? '<div class="actions listen-row"><button class="btn small listen" type="button" data-act="listen" data-id="' + esc(it.id) + '" aria-pressed="' + (speakingId === it.id) + '" aria-label="' + (speakingId === it.id ? 'Stop reading' : 'Listen to this post about ' + esc(it.holder)) + '">' + (speakingId === it.id ? 'Stop' : 'Listen') + '</button></div>' : '') +
         (mine ? '<div class="actions"><button class="btn small" data-act="toggle" data-id="' + esc(it.id) + '">' +
           (it.resolved ? 'Reopen post' : (lost ? 'Mark as found' : 'Mark as returned')) + '</button>' +
           '<button class="btn small danger" data-act="remove" data-id="' + esc(it.id) + '">Remove</button></div>' : '') +
@@ -168,7 +171,9 @@
     var b = e.target.closest('button[data-act]');
     if (!b) return;
     var it = items.find(function (i) { return i.id === b.dataset.id; });
-    if (!it || !it.mine) return;
+    if (!it) return;
+    if (b.dataset.act === 'listen') { toggleSpeech(it); return; }
+    if (!it.mine) return;
     var req;
     if (b.dataset.act === 'toggle') req = api('PATCH', '/api/items/' + encodeURIComponent(it.id), { resolved: !it.resolved });
     else {
@@ -177,6 +182,39 @@
     }
     req.then(refresh).catch(function (ex) { alert(ex.message); });
   });
+
+  /* INCLUSIVE DESIGN 8: "Listen" button. Each post can be read out loud by the
+     device's own voice. Helps blind and low-vision users, people with dyslexia
+     or low literacy, and anyone who cannot read small text right now (walking,
+     tired eyes, bright sun). Nothing is sent anywhere: the browser does the speaking. */
+  var CAN_SPEAK = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+  var speakingId = null;
+  function describe(it) {
+    var lost = it.kind === 'lost';
+    return (lost ? 'Missing ' : 'Found ') + it.idType + '. Name on the ID: ' + it.holder + '. ' +
+      (lost ? 'Lost at ' : 'Found at ') + it.place + (it.detail ? ', ' + it.detail : '') + '. Note: ' + it.note + '. ' +
+      'Posted ' + ago(it.created) + (it.resolved ? '. This post is resolved.' : '.');
+  }
+  function paintListen() { // update only the buttons, so keyboard focus is not lost
+    document.querySelectorAll('button[data-act="listen"]').forEach(function (b) {
+      var on = b.dataset.id === speakingId;
+      b.setAttribute('aria-pressed', on);
+      b.textContent = on ? 'Stop' : 'Listen';
+      var it = items.find(function (i) { return i.id === b.dataset.id; });
+      b.setAttribute('aria-label', on ? 'Stop reading' : 'Listen to this post about ' + (it ? it.holder : ''));
+    });
+  }
+  function toggleSpeech(it) {
+    var synth = window.speechSynthesis;
+    if (speakingId === it.id) { speakingId = null; synth.cancel(); paintListen(); return; }
+    synth.cancel();
+    var u = new SpeechSynthesisUtterance(describe(it)), myId = it.id;
+    u.lang = 'en';
+    u.onend = u.onerror = function () { if (speakingId === myId) { speakingId = null; paintListen(); } };
+    speakingId = myId; paintListen();
+    synth.speak(u);
+  }
+  window.addEventListener('pagehide', function () { if (CAN_SPEAK) window.speechSynthesis.cancel(); });
 
   $('search').addEventListener('input', render);
   $('filter').addEventListener('change', render);

@@ -38,6 +38,16 @@ const SCHEMA = [
      lost_seen BOOLEAN NOT NULL DEFAULT false,
      found_seen BOOLEAN NOT NULL DEFAULT false,
      UNIQUE (lost_item_id, found_item_id)
+   )`,
+  /* site-wide switches set by the admin, e.g. maintenance = on/off */
+  `CREATE TABLE IF NOT EXISTS settings (
+     key TEXT PRIMARY KEY,
+     value TEXT NOT NULL
+   )`,
+  /* accounts the admin removed: they cannot sign in again until the admin allows them back */
+  `CREATE TABLE IF NOT EXISTS removed_users (
+     id TEXT PRIMARY KEY,
+     removed_at BIGINT NOT NULL
    )`
 ];
 
@@ -45,7 +55,7 @@ function createPool() {
   if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is not set. Copy .env.example to .env and fill it in.');
   }
-  return new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
+  return new Pool({ connectionString: process.env.DATABASE_URL, max: 5, connectionTimeoutMillis: 20000 });
 }
 
 async function init(pool) {

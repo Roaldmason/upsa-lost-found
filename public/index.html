@@ -27,6 +27,11 @@
       <label for="indexNo">Student: index number</label>
       <input id="indexNo" name="indexNo" inputmode="numeric" autocomplete="username" maxlength="8" placeholder="103XXXXX" aria-describedby="indexHelp studentError">
       <p id="indexHelp" class="hint">8 digits, starting with 103.</p>
+      <!-- only shown when the administrator login asks for a password -->
+      <div id="adminPassWrap" hidden>
+        <label for="adminPass">Administrator password</label>
+        <input id="adminPass" name="adminPass" type="password" autocomplete="current-password">
+      </div>
       <p id="studentError" class="error" role="alert" hidden></p>
       <button type="submit" class="btn primary wide" id="studentBtn">Sign in as student</button>
     </form>
@@ -66,6 +71,7 @@
     </section>
   </section>
 </main>
+<script src="js/a11y.js"></script>
 <script src="js/login.js"></script>
 </body>
 </html>

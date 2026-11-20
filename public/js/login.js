@@ -41,7 +41,7 @@
     sessionStorage.setItem('upsa_token', body.token);
     sessionStorage.setItem('upsa_user', body.user.id);
     sessionStorage.setItem('upsa_role', body.user.role);
-    window.location.href = 'dashboard.html';
+    window.location.href = body.user.role === 'admin' ? 'admin.html' : 'dashboard.html';
   }
 
   /* ---------- student login ---------- */
@@ -53,11 +53,16 @@
     if (!STUDENT_RE.test(id)) return showError(studentError, indexNo, 'Invalid ID. Index numbers start with 103.');
 
     studentBtn.disabled = true; studentBtn.textContent = 'Signing in...';
-    postJson('/api/login', { role: 'student', id: id }).then(function (res) {
+    var passBox = $('adminPass');
+    postJson('/api/login', { role: 'student', id: id, password: passBox ? passBox.value : '' }).then(function (res) {
+      if (res.body.needPassword) { // the administrator login also wants a password
+        $('adminPassWrap').hidden = false;
+        var e = new Error(res.body.error); e.focusPass = true; throw e;
+      }
       if (!res.ok) throw new Error(res.body.error || 'Could not sign in.');
       finishSignIn(res.body);
     }).catch(function (err) {
-      showError(studentError, indexNo, netMsg(err));
+      showError(studentError, err.focusPass ? $('adminPass') : indexNo, netMsg(err));
       studentBtn.disabled = false; studentBtn.textContent = 'Sign in as student';
     });
   });

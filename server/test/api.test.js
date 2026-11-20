@@ -99,7 +99,7 @@ test('no match for different ID type, own posts, or resolved posts', async () =>
 });
 
 test('only the owner can change or delete a post; delete removes its matches', async () => {
-  const a = await login('student', '10377777'), b = await login('student', '10388888');
+  const a = await login('student', '10355555'), b = await login('student', '10388888');
   const id = (await post(a, { kind: 'lost', holder: 'Efua Tetteh', idType: 'Other' })).body.id;
   assert.strictEqual((await call('PATCH', '/api/items/' + id, { resolved: true }, b)).status, 403);
   assert.strictEqual((await call('DELETE', '/api/items/' + id, null, b)).status, 403);
@@ -179,5 +179,79 @@ test('send-code respects the wait between texts', async () => {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '0277000005' }) });
   assert.strictEqual((await go()).status, 200);
   assert.strictEqual((await go()).status, 429);
+  s2.close();
+});
+
+/* ---------- root login, admin powers and maintenance mode ---------- */
+test('root login 10322580 signs in as admin; normal students stay students', async () => {
+  const r = await call('POST', '/api/login', { role: 'student', id: '10322580' });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.body.user.role, 'admin');
+  const s = await call('POST', '/api/login', { role: 'student', id: '10399999' });
+  assert.strictEqual(s.body.user.role, 'student');
+  // a normal user cannot reach the admin API
+  assert.strictEqual((await call('GET', '/api/admin/users', null, s.body.token)).status, 403);
+  assert.strictEqual((await call('GET', '/api/admin/users')).status, 401);
+});
+
+test('admin sees posters, removes a post and a user (who is then blocked)', async () => {
+  const admin = (await call('POST', '/api/login', { role: 'student', id: '10322580' })).body.token;
+  const u = await login('student', '10399123');
+  const made = await post(u, { holder: 'Remove Me Please' });
+  assert.strictEqual(made.status, 201);
+
+  const users = (await call('GET', '/api/admin/users', null, admin)).body;
+  const row = users.find((x) => x.id === '10399123');
+  assert.ok(row); assert.strictEqual(row.posts, 1);
+  assert.ok(!users.find((x) => x.id === '10322580'));
+
+  // remove one post
+  assert.strictEqual((await call('DELETE', '/api/admin/items/' + made.body.id, null, admin)).status, 200);
+  assert.strictEqual((await call('DELETE', '/api/admin/items/' + made.body.id, null, admin)).status, 404);
+
+  // remove the user and their posts
+  await post(u, { holder: 'Second Post' });
+  assert.strictEqual((await call('DELETE', '/api/admin/users/10399123', null, admin)).status, 200);
+  const items = (await call('GET', '/api/admin/items', null, admin)).body;
+  assert.ok(!items.find((i) => i.ownerId === '10399123'));
+  // their old token and a fresh login are both refused
+  assert.strictEqual((await call('GET', '/api/items', null, u)).status, 401);
+  assert.strictEqual((await call('POST', '/api/login', { role: 'student', id: '10399123' })).status, 403);
+  // admin cannot be removed; allowing back works
+  assert.strictEqual((await call('DELETE', '/api/admin/users/10322580', null, admin)).status, 400);
+  assert.strictEqual((await call('DELETE', '/api/admin/removed/10399123', null, admin)).status, 200);
+  assert.strictEqual((await call('POST', '/api/login', { role: 'student', id: '10399123' })).status, 200);
+});
+
+test('maintenance mode: users are blocked, admin still works, turning it on again restores the site', async () => {
+  const admin = (await call('POST', '/api/login', { role: 'student', id: '10322580' })).body.token;
+  const u = (await call('POST', '/api/login', { role: 'student', id: '10344444' })).body.token;
+  assert.strictEqual((await call('GET', '/api/status')).body.maintenance, false);
+
+  assert.strictEqual((await call('POST', '/api/admin/maintenance', { on: true }, u)).status, 403); // users cannot flip it
+  assert.strictEqual((await call('POST', '/api/admin/maintenance', { on: true }, admin)).status, 200);
+  assert.strictEqual((await call('GET', '/api/status')).body.maintenance, true);
+
+  assert.strictEqual((await call('GET', '/api/items', null, u)).status, 503);
+  assert.strictEqual((await call('POST', '/api/login', { role: 'student', id: '10344444' })).status, 503);
+  assert.strictEqual((await call('GET', '/api/items', null, admin)).status, 200);
+  assert.strictEqual((await call('POST', '/api/login', { role: 'student', id: '10322580' })).status, 200);
+  const home = await fetch(base + '/');
+  assert.strictEqual(home.status, 503);
+  assert.ok((await home.text()).includes('under maintenance'));
+
+  assert.strictEqual((await call('POST', '/api/admin/maintenance', { on: false }, admin)).status, 200);
+  assert.strictEqual((await call('GET', '/api/items', null, u)).status, 200);
+  assert.strictEqual((await fetch(base + '/')).status, 200);
+});
+
+test('optional ROOT_PASSWORD is enforced when set', async () => {
+  const mem = newDb(); const p2 = new (mem.adapters.createPg().Pool)(); await init(p2);
+  const s2 = createApp(p2, { jwtSecret: 'x', rootPassword: 'open-sesame' }).listen(0);
+  const b2 = 'http://127.0.0.1:' + s2.address().port;
+  const go = (pw) => fetch(b2 + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'student', id: '10322580', password: pw }) });
+  assert.strictEqual((await go('')).status, 401);
+  assert.strictEqual((await go('wrong')).status, 401);
+  assert.strictEqual((await go('open-sesame')).status, 200);
   s2.close();
 });

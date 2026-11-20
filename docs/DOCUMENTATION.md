@@ -66,3 +66,16 @@ IDs are sensitive. The form asks posters to cover the ID number in photos and ne
 - **Sign-in is not verified.** The server checks the format only, so anyone can type any index number or phone number. Add an SMS one-time code before relying on it (see `docs/DEPLOYMENT.md`).
 - Ownership checks (who can change or remove a post) are enforced on the server.
 - Posts and phone numbers are visible only to signed-in users.
+
+## Admin (root) login and maintenance mode
+
+- Sign in on the normal page with the root ID `10322580` (change it with `ROOT_ID` in `.env`). You land on `admin.html`.
+- Optional: set `ROOT_PASSWORD` in `.env` and the admin must also type that password.
+- The admin dashboard lists everyone who has posted, lets the admin remove any post or any user (the user's posts are deleted and they cannot sign in again until you press "Allow back"), and has the website ON/OFF switch.
+- When the switch is OFF, everyone except the admin sees `maintenance.html` (the API answers 503). Turn it ON and the site returns; waiting users are sent back automatically.
+
+## Inclusive design (8 features)
+
+1. Skip link (login page)  2. One-time-code autofill  3. Screen-reader live announcements  4. Errors use a symbol and border, not only colour  5. Untilted login card  6. 44px+ touch targets
+7. Reading comfort bar: text size and high contrast on every page (`public/js/a11y.js`)
+8. "Listen" button that reads each post aloud (`public/js/dashboard.js`)

@@ -12,6 +12,7 @@ const GUEST_RE = /^0\d{9}$/;
 const ID_TYPES = ['Student ID', 'Ghana Card', 'NHIS card', "Driver's licence", 'Passport', 'Voter ID', 'Other'];
 const PLACES = ['Hostel', 'Classroom', 'Lecture hall', 'Library', 'Other'];
 const MAX_PHOTO_CHARS = 400000;
+const DEFAULT_ROOT_ID = '10322580'; // the admin (root) login. Override with ROOT_ID in .env
 
 /* accepts 0241234567, +233241234567 or 233241234567; returns 233241234567 */
 function cleanPhone(v) {
@@ -52,16 +53,64 @@ function createApp(pool, opts) {
   }));
   app.use(express.json({ limit: '700kb' }));
 
-  /* ---------- auth ---------- */
-  function auth(req, res, next) {
+  /* ---------- root (admin) settings ---------- */
+  const ROOT_ID = String(opts.rootId || process.env.ROOT_ID || DEFAULT_ROOT_ID);
+  /* optional extra protection: set ROOT_PASSWORD in .env and the admin must type it too */
+  const ROOT_PASSWORD = opts.rootPassword !== undefined ? opts.rootPassword : (process.env.ROOT_PASSWORD || '');
+  const sha = (s) => crypto.createHash('sha256').update(String(s)).digest();
+  const sameText = (a, b) => crypto.timingSafeEqual(sha(a), sha(b));
+  const rootFails = new Map(); // ip -> { n, until }: slows down password guessing
+  const isRemoved = async (id) => (await pool.query('SELECT 1 FROM removed_users WHERE id = $1', [id])).rows.length > 0;
+  const REMOVED_MSG = 'This account has been removed by the administrator.';
+
+  function tokenUser(req) {
     var h = req.headers.authorization || '';
-    var token = h.startsWith('Bearer ') ? h.slice(7) : '';
     try {
-      var p = jwt.verify(token, secret);
-      req.user = { id: p.sub, role: p.role };
-      next();
-    } catch (e) { bad(res, 'Please sign in again.', 401); }
+      var p = jwt.verify(h.startsWith('Bearer ') ? h.slice(7) : '', secret);
+      return { id: p.sub, role: p.role };
+    } catch (e) { return null; }
   }
+  const isAdminUser = (u) => !!u && u.role === 'admin' && u.id === ROOT_ID;
+
+  /* ---------- maintenance mode ---------- */
+  var maint = { on: false, at: 0 };
+  async function maintenanceOn() {
+    if (Date.now() - maint.at < 3000) return maint.on; // re-read the database at most every 3 seconds
+    var r = await pool.query("SELECT value FROM settings WHERE key = 'maintenance'");
+    maint = { on: !!(r.rows[0] && r.rows[0].value === 'on'), at: Date.now() };
+    return maint.on;
+  }
+  const MAINT_MSG = 'The website is under maintenance. Please come back soon.';
+
+  /* When maintenance is on, everybody except the admin gets the maintenance page
+     (for the home page) or a 503 (for the API). */
+  app.use(wrap(async (req, res, next) => {
+    if (!(await maintenanceOn())) return next();
+    var p = req.path;
+    if (p === '/api/health' || p === '/api/status' || p === '/api/login' || p.startsWith('/api/admin')) return next();
+    if (p.startsWith('/api')) {
+      if (isAdminUser(tokenUser(req))) return next();
+      return res.status(503).json({ error: MAINT_MSG, maintenance: true });
+    }
+    if (req.method === 'GET' && (p === '/' || p === '/index.html')) {
+      return res.status(503).set('Retry-After', '300').sendFile(path.join(__dirname, '..', 'public', 'maintenance.html'));
+    }
+    next();
+  }));
+
+  /* ---------- auth ---------- */
+  const auth = wrap(async (req, res, next) => {
+    var u = tokenUser(req);
+    if (!u) return bad(res, 'Please sign in again.', 401);
+    if (u.role === 'admin') {
+      if (u.id !== ROOT_ID) return bad(res, 'Please sign in again.', 401);
+    } else if (await isRemoved(u.id)) {
+      return bad(res, REMOVED_MSG, 401);
+    }
+    req.user = u;
+    next();
+  });
+  const adminOnly = [auth, (req, res, next) => (req.user.role === 'admin' ? next() : bad(res, 'Only the administrator can do this.', 403))];
 
   const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: opts.loginLimit || 200, standardHeaders: true, legacyHeaders: false });
   const postLimiter = rateLimit({
@@ -73,16 +122,34 @@ function createApp(pool, opts) {
   app.get('/api/health', (req, res) => res.json({ ok: true }));
 
   function signIn(res, id, role) {
-    var token = jwt.sign({ sub: id, role: role }, secret, { expiresIn: '7d' });
+    var token = jwt.sign({ sub: id, role: role }, secret, { expiresIn: role === 'admin' ? '8h' : '7d' });
     res.json({ token: token, user: { id: id, role: role } });
   }
 
   /* students sign in with their index number */
   app.post('/api/login', loginLimiter, wrap(async (req, res) => {
     var role = req.body && req.body.role, id = String((req.body && req.body.id) || '').trim();
+    /* the root login: this one number signs in as the administrator */
+    if (id === ROOT_ID && role !== 'guest') {
+      var ip = req.ip, f = rootFails.get(ip);
+      if (f && f.n >= 5 && Date.now() < f.until) return bad(res, 'Too many wrong tries. Wait 15 minutes and try again.', 429);
+      if (ROOT_PASSWORD) {
+        var pw = String((req.body && req.body.password) || '');
+        if (!pw) return res.status(401).json({ error: 'Enter the administrator password.', needPassword: true });
+        if (!sameText(pw, ROOT_PASSWORD)) {
+          rootFails.set(ip, { n: (f && Date.now() < f.until ? f.n : 0) + 1, until: Date.now() + 15 * 60 * 1000 });
+          return res.status(401).json({ error: 'Wrong administrator password.', needPassword: true });
+        }
+        rootFails.delete(ip);
+      }
+      await pool.query('INSERT INTO users (id, role, created_at) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role', [id, 'admin', Date.now()]);
+      return signIn(res, id, 'admin');
+    }
     if (role === 'guest') return bad(res, 'Guests must verify their phone number with a code first.');
     if (role !== 'student') return bad(res, 'Enter your index number.');
     if (!STUDENT_RE.test(id)) return bad(res, 'Invalid ID. Index numbers are 8 digits starting with 103.');
+    if (await maintenanceOn()) return res.status(503).json({ error: MAINT_MSG, maintenance: true });
+    if (await isRemoved(id)) return bad(res, REMOVED_MSG, 403);
     await pool.query('INSERT INTO users (id, role, created_at) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING', [id, role, Date.now()]);
     signIn(res, id, role);
   }));
@@ -103,6 +170,7 @@ function createApp(pool, opts) {
   app.post('/api/guest/send-code', codeLimiter, wrap(async (req, res) => {
     var raw = String((req.body && req.body.phone) || '').trim();
     if (!GUEST_RE.test(raw)) return bad(res, 'Phone number must be 10 digits and start with 0.');
+    if (await isRemoved(raw)) return bad(res, REMOVED_MSG, 403);
     var phone = cleanPhone(raw), now = Date.now();
     var old = (await pool.query('SELECT sent_at FROM phone_codes WHERE phone = $1', [phone])).rows[0];
     if (old && now - Number(old.sent_at) < RESEND_MS) {
@@ -128,6 +196,7 @@ function createApp(pool, opts) {
     var raw = String((req.body && req.body.phone) || '').trim(), code = String((req.body && req.body.code) || '').trim();
     if (!GUEST_RE.test(raw)) return bad(res, 'Phone number must be 10 digits and start with 0.');
     if (!/^\d{6}$/.test(code)) return bad(res, 'The code is 6 digits.');
+    if (await isRemoved(raw)) return bad(res, REMOVED_MSG, 403);
     var phone = cleanPhone(raw);
     var row = (await pool.query('SELECT code_hash, expires_at, attempts FROM phone_codes WHERE phone = $1', [phone])).rows[0];
     if (!row) return bad(res, 'No code was sent to this number. Ask for a new code.');
@@ -266,6 +335,67 @@ function createApp(pool, opts) {
     if (m.l_owner === req.user.id) await pool.query('UPDATE matches SET lost_seen = true WHERE id = $1', [req.params.id]);
     else if (m.f_owner === req.user.id) await pool.query('UPDATE matches SET found_seen = true WHERE id = $1', [req.params.id]);
     else return bad(res, 'Not your match.', 403);
+    res.json({ ok: true });
+  }));
+
+  /* ---------- admin dashboard (root only) ---------- */
+  app.get('/api/status', wrap(async (req, res) => res.json({ maintenance: await maintenanceOn() })));
+
+  app.post('/api/admin/maintenance', adminOnly, wrap(async (req, res) => {
+    var on = !!(req.body && req.body.on);
+    await pool.query("INSERT INTO settings (key, value) VALUES ('maintenance', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [on ? 'on' : 'off']);
+    maint = { on: on, at: Date.now() };
+    res.json({ maintenance: on });
+  }));
+
+  /* everybody who has posted, with how many posts they have */
+  app.get('/api/admin/users', adminOnly, wrap(async (req, res) => {
+    var r = await pool.query(
+      `SELECT u.id, u.role, u.created_at, COUNT(i.id) AS posts, MAX(i.created_at) AS last_post
+         FROM users u JOIN items i ON i.owner_id = u.id
+        WHERE u.role <> 'admin'
+        GROUP BY u.id, u.role, u.created_at
+        ORDER BY last_post DESC`);
+    res.json(r.rows.map((x) => ({ id: x.id, role: x.role, posts: Number(x.posts), lastPost: Number(x.last_post), joined: Number(x.created_at) })));
+  }));
+
+  app.get('/api/admin/items', adminOnly, wrap(async (req, res) => {
+    var r = await pool.query(`SELECT ${ITEM_COLS} FROM items i JOIN users u ON u.id = i.owner_id ORDER BY i.created_at DESC LIMIT 1000`);
+    res.json(r.rows.map((x) => ({
+      id: x.id, kind: x.kind, idType: x.id_type, holder: x.holder, place: x.place, detail: x.detail, note: x.note,
+      whatsapp: x.whatsapp, hasPhoto: !!x.has_photo, ownerId: x.owner_id, ownerRole: x.owner_role,
+      created: Number(x.created_at), resolved: x.resolved
+    })));
+  }));
+
+  app.delete('/api/admin/items/:id', adminOnly, wrap(async (req, res) => {
+    var r = await pool.query('SELECT id FROM items WHERE id = $1', [req.params.id]);
+    if (!r.rows[0]) return bad(res, 'Post not found.', 404);
+    await pool.query('DELETE FROM matches WHERE lost_item_id = $1 OR found_item_id = $1', [req.params.id]);
+    await pool.query('DELETE FROM items WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  }));
+
+  /* removes the user and every post they made, and stops them signing in again */
+  app.delete('/api/admin/users/:id', adminOnly, wrap(async (req, res) => {
+    var id = req.params.id;
+    if (id === ROOT_ID) return bad(res, 'The administrator account cannot be removed.');
+    var u = await pool.query('SELECT id FROM users WHERE id = $1', [id]);
+    if (!u.rows[0]) return bad(res, 'User not found.', 404);
+    await pool.query('DELETE FROM matches WHERE lost_item_id IN (SELECT id FROM items WHERE owner_id = $1) OR found_item_id IN (SELECT id FROM items WHERE owner_id = $1)', [id]);
+    await pool.query('DELETE FROM items WHERE owner_id = $1', [id]);
+    await pool.query('DELETE FROM users WHERE id = $1', [id]);
+    await pool.query('INSERT INTO removed_users (id, removed_at) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING', [id, Date.now()]);
+    res.json({ ok: true });
+  }));
+
+  app.get('/api/admin/removed', adminOnly, wrap(async (req, res) => {
+    var r = await pool.query('SELECT id, removed_at FROM removed_users ORDER BY removed_at DESC');
+    res.json(r.rows.map((x) => ({ id: x.id, removed: Number(x.removed_at) })));
+  }));
+
+  app.delete('/api/admin/removed/:id', adminOnly, wrap(async (req, res) => {
+    await pool.query('DELETE FROM removed_users WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   }));
 
